@@ -2,10 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 
 @layer base {
-  :root {
+  /* Dark theme (default) */
+  :root,
+  [data-theme="dark"] {
     --background: 222 47% 6%;
     --foreground: 210 40% 95%;
 
@@ -45,7 +47,6 @@
     --sidebar-border: 222 30% 15%;
     --sidebar-ring: 187 80% 50%;
 
-    /* Custom tokens */
     --glow: 187 80% 50%;
     --glow-secondary: 260 70% 60%;
     --surface: 222 40% 11%;
@@ -54,6 +55,104 @@
     --gradient-accent: linear-gradient(135deg, hsl(187 80% 50%), hsl(260 70% 60%));
     --shadow-glow: 0 0 20px hsl(187 80% 50% / 0.15);
     --shadow-glow-strong: 0 0 40px hsl(187 80% 50% / 0.25);
+  }
+
+  /* Light theme */
+  [data-theme="light"] {
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 220 70% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 92%;
+    --secondary-foreground: 222 30% 30%;
+
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 220 70% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 87%;
+    --input: 220 13% 87%;
+    --ring: 220 70% 50%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 30% 30%;
+    --sidebar-primary: 220 70% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 95%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 90%;
+    --sidebar-ring: 220 70% 50%;
+
+    --glow: 220 70% 50%;
+    --glow-secondary: 260 60% 55%;
+    --surface: 220 14% 95%;
+    --surface-hover: 220 14% 90%;
+    --gradient-primary: linear-gradient(135deg, hsl(220 70% 50%), hsl(240 60% 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(220 70% 50%), hsl(260 60% 55%));
+    --shadow-glow: 0 4px 20px hsl(220 70% 50% / 0.1);
+    --shadow-glow-strong: 0 8px 40px hsl(220 70% 50% / 0.15);
+  }
+
+  /* Cyberpunk theme */
+  [data-theme="cyberpunk"] {
+    --background: 270 30% 6%;
+    --foreground: 60 100% 90%;
+
+    --card: 270 28% 10%;
+    --card-foreground: 60 100% 90%;
+
+    --popover: 270 28% 10%;
+    --popover-foreground: 60 100% 90%;
+
+    --primary: 330 100% 60%;
+    --primary-foreground: 270 30% 6%;
+
+    --secondary: 270 20% 16%;
+    --secondary-foreground: 60 80% 80%;
+
+    --muted: 270 20% 16%;
+    --muted-foreground: 270 15% 50%;
+
+    --accent: 170 100% 50%;
+    --accent-foreground: 270 30% 6%;
+
+    --destructive: 0 90% 55%;
+    --destructive-foreground: 60 100% 95%;
+
+    --border: 270 25% 22%;
+    --input: 270 25% 22%;
+    --ring: 330 100% 60%;
+
+    --sidebar-background: 270 30% 5%;
+    --sidebar-foreground: 60 80% 80%;
+    --sidebar-primary: 330 100% 60%;
+    --sidebar-primary-foreground: 270 30% 6%;
+    --sidebar-accent: 270 20% 14%;
+    --sidebar-accent-foreground: 60 100% 90%;
+    --sidebar-border: 270 25% 18%;
+    --sidebar-ring: 330 100% 60%;
+
+    --glow: 330 100% 60%;
+    --glow-secondary: 170 100% 50%;
+    --surface: 270 25% 12%;
+    --surface-hover: 270 22% 18%;
+    --gradient-primary: linear-gradient(135deg, hsl(330 100% 60%), hsl(20 100% 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(330 100% 60%), hsl(170 100% 50%));
+    --shadow-glow: 0 0 20px hsl(330 100% 60% / 0.2);
+    --shadow-glow-strong: 0 0 40px hsl(330 100% 60% / 0.35);
   }
 }
 
@@ -64,11 +163,11 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
     @apply tracking-tight;
   }
 
