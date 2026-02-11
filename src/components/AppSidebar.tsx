@@ -1,21 +1,23 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutGrid, Settings, Zap, Globe, Palette } from "lucide-react";
+import { LayoutGrid, Settings, Zap, User, LogOut, Shield } from "lucide-react";
 import { motion } from "framer-motion";
-import { useI18n, LANGUAGES, Language } from "@/lib/i18n";
-import { useTheme, THEMES, Theme } from "@/lib/theme";
-import { useState } from "react";
+import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 
 export function AppSidebar() {
   const location = useLocation();
-  const { t, language, setLanguage } = useI18n();
-  const { theme, setTheme } = useTheme();
-  const [showLang, setShowLang] = useState(false);
-  const [showTheme, setShowTheme] = useState(false);
+  const { t } = useI18n();
+  const { user, profile, roles, signOut, isAdminOrManager } = useAuth();
 
   const links = [
     { to: "/", label: t("nav.agents"), icon: LayoutGrid },
-    { to: "/admin", label: t("nav.admin"), icon: Settings },
+    ...(isAdminOrManager ? [{ to: "/admin", label: t("nav.admin"), icon: Shield }] : []),
+    { to: "/profile", label: t("nav.profile"), icon: User },
+    { to: "/settings", label: t("nav.settings"), icon: Settings },
   ];
+
+  const displayName = profile?.display_name || user?.email?.split("@")[0] || t("user.name");
+  const avatarUrl = profile?.avatar_url;
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r border-sidebar-border bg-sidebar">
@@ -58,80 +60,28 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Settings */}
-      <div className="px-3 pb-2 space-y-1">
-        {/* Language picker */}
-        <div className="relative">
-          <button
-            onClick={() => { setShowLang(!showLang); setShowTheme(false); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
-          >
-            <Globe className="h-4 w-4" />
-            {t("settings.language")}
-          </button>
-          {showLang && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="absolute bottom-full left-0 mb-1 w-full rounded-lg border border-border bg-card p-1 shadow-lg z-50"
-            >
-              {LANGUAGES.map((lang) => (
-                <button
-                  key={lang.code}
-                  onClick={() => { setLanguage(lang.code); setShowLang(false); }}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                    language === lang.code ? "bg-primary/15 text-primary" : "text-foreground hover:bg-secondary"
-                  }`}
-                >
-                  {lang.label}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </div>
-
-        {/* Theme picker */}
-        <div className="relative">
-          <button
-            onClick={() => { setShowTheme(!showTheme); setShowLang(false); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
-          >
-            <Palette className="h-4 w-4" />
-            {t("settings.theme")}
-          </button>
-          {showTheme && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="absolute bottom-full left-0 mb-1 w-full rounded-lg border border-border bg-card p-1 shadow-lg z-50"
-            >
-              {THEMES.map((th) => (
-                <button
-                  key={th.id}
-                  onClick={() => { setTheme(th.id); setShowTheme(false); }}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                    theme === th.id ? "bg-primary/15 text-primary" : "text-foreground hover:bg-secondary"
-                  }`}
-                >
-                  <span>{th.icon}</span> {th.label}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </div>
-      </div>
-
       {/* Footer */}
-      <div className="border-t border-sidebar-border px-6 py-4">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary ring-2 ring-primary/10">
-            U
+      <div className="border-t border-sidebar-border px-3 pb-3">
+        <div className="flex items-center gap-3 px-3 py-4">
+          <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden text-xs font-bold text-primary ring-2 ring-primary/10 shrink-0">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              displayName[0]?.toUpperCase()
+            )}
           </div>
-          <div>
-            <p className="text-xs font-medium text-foreground">{t("user.name")}</p>
-            <p className="text-[10px] text-muted-foreground font-mono">{t("user.email")}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-foreground truncate">{displayName}</p>
+            <p className="text-[10px] text-muted-foreground font-mono truncate">{user?.email}</p>
           </div>
         </div>
+        <button
+          onClick={signOut}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+          {t("auth.signOut")}
+        </button>
       </div>
     </aside>
   );
