@@ -1,20 +1,56 @@
-import { MOCK_AGENTS } from "@/lib/agents";
 import { AgentCard } from "@/components/AgentCard";
 import { motion } from "framer-motion";
 import { Search, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
+import { AGENT_ICONS } from "@/lib/agents";
+
+interface AgentRow {
+  id: string;
+  name: string;
+  description: string | null;
+  endpoint: string;
+  icon: string;
+  status: string;
+  category: string | null;
+}
 
 export default function AgentsPage() {
   const [search, setSearch] = useState("");
+  const [agents, setAgents] = useState<AgentRow[]>([]);
   const { t } = useI18n();
-  const filtered = MOCK_AGENTS.filter(
+  const { user, isAdminOrManager } = useAuth();
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      if (!user) return;
+
+      if (isAdminOrManager) {
+        // Admin/Manager can see all agents
+        const { data } = await supabase.from("agents").select("*").order("created_at", { ascending: false });
+        setAgents((data as AgentRow[]) || []);
+      } else {
+        // Regular users see only assigned agents
+        const { data } = await supabase
+          .from("agent_assignments")
+          .select("agent_id, agents(*)")
+          .eq("user_id", user.id);
+        const assigned = (data || []).map((a: any) => a.agents).filter(Boolean);
+        setAgents(assigned);
+      }
+    };
+    loadAgents();
+  }, [user, isAdminOrManager]);
+
+  const filtered = agents.filter(
     (a) =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.category.toLowerCase().includes(search.toLowerCase())
+      (a.category || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const online = MOCK_AGENTS.filter((a) => a.status === "online").length;
+  const online = agents.filter((a) => a.status === "online").length;
 
   return (
     <div className="space-y-8">
@@ -28,7 +64,6 @@ export default function AgentsPage() {
           <p className="text-sm text-muted-foreground mt-1">{t("agents.subtitle")}</p>
         </div>
 
-        {/* Search */}
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -41,16 +76,15 @@ export default function AgentsPage() {
         </div>
       </motion.div>
 
-      {/* Grid */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((agent, i) => (
-          <AgentCard key={agent.id} agent={agent} index={i} />
+          <AgentCard key={agent.id} agent={{ ...agent, description: agent.description || "", category: agent.category || "", status: agent.status as "online" | "offline" | "maintenance", assignedUsers: [] }} index={i} />
         ))}
       </div>
 
       {filtered.length === 0 && (
         <div className="text-center py-20 text-muted-foreground">
-          <p className="text-sm">{t("agents.noResults")} "{search}"</p>
+          <p className="text-sm">{agents.length === 0 ? t("agents.noAgents") : `${t("agents.noResults")} "${search}"`}</p>
         </div>
       )}
     </div>
