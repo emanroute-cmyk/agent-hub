@@ -27,22 +27,21 @@ export default function AgentsPage() {
     const loadAgents = async () => {
       if (!user) return;
 
-      if (isAdminOrManager) {
-        // Admin/Manager can see all agents
-        const { data } = await supabase.from("agents").select("*").order("created_at", { ascending: false });
-        setAgents((data as AgentRow[]) || []);
-      } else {
-        // Regular users see only assigned agents
-        const { data } = await supabase
-          .from("agent_assignments")
-          .select("agent_id, agents(*)")
-          .eq("user_id", user.id);
-        const assigned = (data || []).map((a: any) => a.agents).filter(Boolean);
-        setAgents(assigned);
+      const { data, error } = await supabase
+        .from("agents")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error(error);
+        return;
       }
+
+      setAgents((data as AgentRow[]) || []);
     };
+
     loadAgents();
-  }, [user, isAdminOrManager]);
+  }, [user]);
 
   const filtered = agents.filter(
     (a) =>
