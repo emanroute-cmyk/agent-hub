@@ -3,7 +3,7 @@ import { Send, Loader2, Bot, User, Image, Paperclip, Mic, MicOff, X, FileText, P
 import { motion, AnimatePresence } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 
 interface ChatMsg {
   id: string;
@@ -37,103 +37,128 @@ export function ChatInterface({ agentId, agentName }: { agentId: string; agentNa
   // Load or create session
   useEffect(() => {
     if (!user) return;
+    
     const loadSession = async () => {
-      // Try to find existing session
-      const { data: sessions } = await supabase
-        .from("chat_sessions")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("agent_id", agentId)
-        .order("updated_at", { ascending: false })
-        .limit(1);
+      try {
+        // Try to find existing session
+        const { data: sessions, error: sessionsError } = await apiService.getSessions(user.id, agentId);
 
-      let sid: string;
-      if (sessions && sessions.length > 0) {
-        sid = (sessions[0] as any).id;
-      } else {
-        const { data } = await supabase
-          .from("chat_sessions")
-          .insert({ user_id: user.id, agent_id: agentId, title: agentName })
-          .select("id")
-          .single();
-        sid = (data as any).id;
+        let sid: string;
+        if (sessions && sessions.length > 0) {
+          sid = sessions[0].id;
+        } else {
+          // Create new session
+          const { data: newSession, error: createError } = await apiService.createSession(
+            user.id,
+            agentId,
+            agentName
+          );
+          
+          if (createError || !newSession) {
+            console.error("Failed to create session:", createError);
+            return;
+          }
+          sid = newSession.id;
+        }
+        
+        setSessionId(sid);
+
+        // Load messages
+        const { data: msgs } = await apiService.getMessages(sid);
+        setMessages(msgs || []);
+      } catch (err) {
+        console.error("Error loading session:", err);
       }
-      setSessionId(sid);
-
-      // Load messages
-      const { data: msgs } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("session_id", sid)
-        .order("created_at", { ascending: true });
-      setMessages((msgs as ChatMsg[]) || []);
     };
+    
     loadSession();
   }, [user, agentId, agentName]);
 
-  const uploadMedia = async (file: File, type: "image" | "file" | "voice"): Promise<{ url: string; fileName: string } | null> => {
+  const uploadMedia = async (file: File): Promise<{ url: string; fileName: string } | null> => {
     if (!user) return null;
-    const ext = file.name.split(".").pop();
-    const path = `${user.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("chat-media").upload(path, file);
-    if (error) return null;
-    const { data } = supabase.storage.from("chat-media").getPublicUrl(path);
-    return { url: data.publicUrl, fileName: file.name };
+    
+    const { data, error } = await apiService.uploadFile(file);
+    
+    if (error || !data) {
+      console.error("Upload failed:", error);
+      return null;
+    }
+    
+    return data;
   };
 
   const sendMessage = async (content?: string, mediaType?: string, mediaUrl?: string, fileName?: string) => {
-    if (!sessionId || !user) return;
+    if (!sessionId || !user) {
+      console.log("Cannot send message: no session or user");
+      return;
+    }
+    
     const text = content || input.trim();
-    if (!text && !mediaUrl) return;
+    if (!text && !mediaUrl) {
+      console.log("Cannot send empty message");
+      return;
+    }
 
-    const userMsg: any = {
-      session_id: sessionId,
-      role: "user",
-      content: text || null,
-      media_type: mediaType || "text",
-      media_url: mediaUrl || null,
-      file_name: fileName || null,
-    };
+    console.log("Sending message:", { text, mediaType, mediaUrl, fileName });
 
-    const { data } = await supabase.from("messages").insert(userMsg).select().single();
-    if (data) setMessages((prev) => [...prev, data as ChatMsg]);
-    setInput("");
-    setIsLoading(true);
+    try {
+      // Create user message
+      const { data: userMsg, error: userError } = await apiService.createMessage(
+        sessionId,
+        "user",
+        text || undefined,
+        mediaType || "text",
+        mediaUrl,
+        fileName
+      );
 
-    // Update session timestamp
-    await supabase.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessionId);
+      if (userError || !userMsg) {
+        console.error("Failed to send message:", userError);
+        return;
+      }
 
-    // Simulated response
-    setTimeout(async () => {
-      const assistantMsg = {
-        session_id: sessionId,
-        role: "assistant" as const,
-        content: t("chat.simulated", { query: text || fileName || "media" }),
-        media_type: "text",
-        media_url: null,
-        file_name: null,
-      };
-      const { data: aData } = await supabase.from("messages").insert(assistantMsg).select().single();
-      if (aData) setMessages((prev) => [...prev, aData as ChatMsg]);
+      setMessages((prev) => [...prev, userMsg as ChatMsg]);
+      setInput("");
+      setIsLoading(true);
+
+      // Get AI response
+      const { data: aiResponse, error: aiError } = await apiService.sendChatMessage(
+        sessionId,
+        text || fileName || "media",
+        agentId
+      );
+
       setIsLoading(false);
-    }, 1500);
+
+      if (aiError || !aiResponse) {
+        console.error("Failed to get AI response:", aiError);
+        return;
+      }
+
+      setMessages((prev) => [...prev, aiResponse as ChatMsg]);
+    } catch (err) {
+      console.error("Error in sendMessage:", err);
+      setIsLoading(false);
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await uploadMedia(file, "image");
+    
+    const result = await uploadMedia(file);
     if (result) {
-      await sendMessage(null, "image", result.url, result.fileName);
+      await sendMessage(undefined, "image", result.url, result.fileName);
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await uploadMedia(file, "file");
+    
+    const result = await uploadMedia(file);
     if (result) {
-      await sendMessage(null, "file", result.url, result.fileName);
+      await sendMessage(undefined, "file", result.url, result.fileName);
     }
   };
 
@@ -154,17 +179,17 @@ export function ChatInterface({ agentId, agentName }: { agentId: string; agentNa
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: "audio/webm" });
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
-        const result = await uploadMedia(file, "voice");
+        const result = await uploadMedia(file);
         if (result) {
-          await sendMessage(null, "voice", result.url, result.fileName);
+          await sendMessage(undefined, "voice", result.url, result.fileName);
         }
       };
 
       recorder.start();
       setMediaRecorder(recorder);
       setIsRecording(true);
-    } catch {
-      // Microphone access denied
+    } catch (err) {
+      console.error("Microphone access denied:", err);
     }
   };
 
@@ -304,7 +329,7 @@ export function ChatInterface({ agentId, agentName }: { agentId: string; agentNa
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
             placeholder={t("chat.placeholder")}
             className="flex-1 rounded-xl glass px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 transition-shadow"
           />

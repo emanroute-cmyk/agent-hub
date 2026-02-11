@@ -6,16 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiService } from "@/services/api";
 
 interface AgentRow {
   id: string;
   name: string;
-  description: string | null;
+  description: string;
   endpoint: string;
   icon: string;
   status: string;
-  category: string | null;
+  category: string;
 }
 
 export default function AgentChatPage() {
@@ -27,30 +27,78 @@ export default function AgentChatPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from("agents").select("*").eq("id", id).maybeSingle();
-      setAgent(data as AgentRow | null);
-      setLoading(false);
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await apiService.getAgent(id);
+        
+        if (error) {
+          console.error("Failed to load agent:", error);
+          setAgent(null);
+        } else {
+          setAgent(data as AgentRow);
+        }
+      } catch (err) {
+        console.error("Error loading agent:", err);
+        setAgent(null);
+      } finally {
+        setLoading(false);
+      }
     };
+    
     load();
   }, [id]);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <p className="text-sm text-muted-foreground mt-4">Loading agent...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!agent) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Agent not found.</p>
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">Agent not found.</p>
+          <button
+            onClick={() => navigate("/agents")}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+          >
+            Back to Agents
+          </button>
+        </div>
       </div>
     );
   }
 
   const IconComponent = AGENT_ICONS[agent.icon] || AGENT_ICONS.bot;
+  const statusColors = {
+    online: "bg-green-500",
+    offline: "bg-gray-500",
+    maintenance: "bg-yellow-500",
+  };
+  const statusColor = statusColors[agent.status as keyof typeof statusColors] || statusColors.online;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-[calc(100vh-4rem)] flex-col">
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      className="flex h-[calc(100vh-4rem)] flex-col"
+    >
       {/* Header */}
       <div className="flex items-center gap-4 border-b border-border pb-4 mb-0 glass rounded-xl px-5 py-4">
-        <button onClick={() => navigate("/")} className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors">
+        <button 
+          onClick={() => navigate("/agents")} 
+          className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors"
+        >
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -59,10 +107,12 @@ export default function AgentChatPage() {
         <div className="flex-1">
           <h2 className="text-lg font-semibold text-foreground">{agent.name}</h2>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider">{agent.category}</Badge>
+            <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider">
+              {agent.category}
+            </Badge>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary/80 animate-pulse-glow" />
-              {t("agents.online")}
+              <span className={`h-1.5 w-1.5 rounded-full ${statusColor} ${agent.status === 'online' ? 'animate-pulse-glow' : ''}`} />
+              {agent.status}
             </span>
           </div>
         </div>
