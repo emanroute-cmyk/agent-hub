@@ -62,6 +62,7 @@ export default function AgentsPage() {
     
     loadAgents();
   }, [user]);
+  }, [user]);
 
   const filtered = agents.filter(
     (a) =>
