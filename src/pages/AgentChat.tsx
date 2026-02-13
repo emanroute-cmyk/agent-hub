@@ -30,6 +30,8 @@ export default function AgentChatPage() {
   const [loading, setLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Add state for real-time session titles
+  const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -57,13 +59,31 @@ export default function AgentChatPage() {
     loadLatest();
   }, [user, id]);
 
-  const handleNewSession = () => setActiveSessionId(null);
+  const handleNewSession = () => {
+    setActiveSessionId(null);
+    // Optionally clear the title for the new session
+    // No need to clear sessionTitles as it will be added when title is generated
+  };
 
   const handleClearChat = async (sessionId: string) => {
     await supabase.from("messages").delete().eq("session_id", sessionId);
     setActiveSessionId(null);
     setTimeout(() => setActiveSessionId(sessionId), 0);
   };
+
+  // Handle real-time title updates from ChatInterface
+  const handleSessionTitleUpdated = (sessionId: string, title: string) => {
+    console.log("🎯 Title updated in real-time:", { sessionId, title });
+    setSessionTitles(prev => ({
+      ...prev,
+      [sessionId]: title
+    }));
+  };
+
+  // Reset sessionTitles when agent changes
+  useEffect(() => {
+    setSessionTitles({});
+  }, [id]);
 
   if (loading) return null;
 
@@ -98,10 +118,10 @@ export default function AgentChatPage() {
           <h2 className="text-sm font-semibold text-foreground truncate">{agent.name}</h2>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider">{agent.category}</Badge>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {/* <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-primary/80 animate-pulse-glow" />
               {t("agents.online")}
-            </span>
+            </span> */}
           </div>
         </div>
       </header>
@@ -119,6 +139,7 @@ export default function AgentChatPage() {
             onClearChat={handleClearChat}
             collapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed((v) => !v)}
+            sessionTitles={sessionTitles} // Pass the real-time titles
           />
         )}
         <div className="flex-1 overflow-hidden">
@@ -127,6 +148,7 @@ export default function AgentChatPage() {
             agentName={agent.name}
             sessionId={activeSessionId}
             onSessionCreated={setActiveSessionId}
+            onSessionTitleUpdated={(title) => handleSessionTitleUpdated(activeSessionId!, title)} // Pass the title update handler
           />
         </div>
       </div>

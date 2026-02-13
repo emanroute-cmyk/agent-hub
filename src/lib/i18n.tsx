@@ -100,6 +100,9 @@ const translations: Record<Language, Record<string, string>> = {
     "notfound.link": "Return to Home",
     "user.name": "User",
     "user.email": "user@company.com",
+    "agents.checking": "Checking...",
+    "agents.backendOffline": "backend offline",
+    "agents.backendOfflineTooltip": "Backend server is offline",
   },
   fr: {
     "nav.agents": "Agents",
@@ -191,6 +194,9 @@ const translations: Record<Language, Record<string, string>> = {
     "notfound.link": "Retour à l'Accueil",
     "user.name": "Utilisateur",
     "user.email": "utilisateur@entreprise.com",
+    "agents.checking": "Vérification...",
+    "agents.backendOffline": "backend hors ligne",
+    "agents.backendOfflineTooltip": "Le serveur backend est hors ligne",
   },
   ar: {
     "nav.agents": "الوكلاء",
@@ -282,6 +288,9 @@ const translations: Record<Language, Record<string, string>> = {
     "notfound.link": "العودة إلى الرئيسية",
     "user.name": "المستخدم",
     "user.email": "user@company.com",
+    "agents.checking": "جاري التحقق...",
+    "agents.backendOffline": "الخادم غير متصل",
+    "agents.backendOfflineTooltip": "خادم الواجهة الخلفية غير متصل",
   },
   es: {
     "nav.agents": "Agentes",
@@ -373,6 +382,9 @@ const translations: Record<Language, Record<string, string>> = {
     "notfound.link": "Volver al Inicio",
     "user.name": "Usuario",
     "user.email": "usuario@empresa.com",
+    "agents.checking": "Verificando...",
+    "agents.backendOffline": "backend desconectado",
+    "agents.backendOfflineTooltip": "El servidor backend está desconectado",
   },
 };
 
@@ -385,7 +397,7 @@ interface I18nContextType {
 
 const I18nContext = createContext<I18nContextType>({
   language: "en",
-  setLanguage: () => {},
+  setLanguage: () => { },
   t: (key) => key,
   dir: "ltr",
 });
