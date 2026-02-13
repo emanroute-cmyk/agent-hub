@@ -18,11 +18,10 @@ interface ChatMsg {
 // Flask backend configuration
 const FLASK_API_URL = "http://127.0.0.1:5000";
 
-export function ChatInterface({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function ChatInterface({ agentId, agentName, sessionId, onSessionCreated }: { agentId: string; agentName: string; sessionId: string | null; onSessionCreated: (id: string) => void }) {
   const { t } = useI18n();
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -41,38 +40,29 @@ export function ChatInterface({ agentId, agentName }: { agentId: string; agentNa
   useEffect(() => {
     if (!user) return;
     const loadSession = async () => {
-      // Try to find existing session
-      const { data: sessions } = await supabase
-        .from("chat_sessions")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("agent_id", agentId)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-
-      let sid: string;
-      if (sessions && sessions.length > 0) {
-        sid = (sessions[0] as any).id;
+      if (sessionId) {
+        // Load messages for existing session
+        const { data: msgs } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("session_id", sessionId)
+          .order("created_at", { ascending: true });
+        setMessages((msgs as ChatMsg[]) || []);
       } else {
+        // Create a new session
         const { data } = await supabase
           .from("chat_sessions")
           .insert({ user_id: user.id, agent_id: agentId, title: agentName })
           .select("id")
           .single();
-        sid = (data as any).id;
+        if (data) {
+          onSessionCreated((data as any).id);
+        }
+        setMessages([]);
       }
-      setSessionId(sid);
-
-      // Load messages
-      const { data: msgs } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("session_id", sid)
-        .order("created_at", { ascending: true });
-      setMessages((msgs as ChatMsg[]) || []);
     };
     loadSession();
-  }, [user, agentId, agentName]);
+  }, [user, agentId, agentName, sessionId]);
 
   const uploadMedia = async (file: File, type: "image" | "file" | "voice"): Promise<{ url: string; fileName: string } | null> => {
     if (!user) return null;
