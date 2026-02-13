@@ -81,9 +81,9 @@ export default function AgentChatPage() {
   const IconComponent = AGENT_ICONS[agent.icon] || AGENT_ICONS.bot;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-[calc(100vh-4rem)] flex-col">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center gap-4 border-b border-border pb-4 mb-0 glass rounded-xl px-5 py-4">
+      <div className="flex items-center gap-4 border-b border-border px-5 py-3">
         <button onClick={() => navigate("/")} className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors">
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -102,7 +102,7 @@ export default function AgentChatPage() {
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden mt-2 rounded-xl border border-border">
+      <div className="flex flex-1 overflow-hidden">
         {user && (
           <ChatSessionSidebar
             userId={user.id}
