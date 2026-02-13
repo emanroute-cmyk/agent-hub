@@ -2,8 +2,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { AGENT_ICONS } from "@/lib/agents";
 import { ChatInterface } from "@/components/ChatInterface";
 import { ChatSessionSidebar } from "@/components/ChatSessionSidebar";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, PanelLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import { useEffect, useState } from "react";
@@ -28,6 +29,7 @@ export default function AgentChatPage() {
   const [agent, setAgent] = useState<AgentRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -38,7 +40,6 @@ export default function AgentChatPage() {
     load();
   }, [id]);
 
-  // Load most recent session on mount
   useEffect(() => {
     if (!user || !id) return;
     const loadLatest = async () => {
@@ -52,18 +53,14 @@ export default function AgentChatPage() {
       if (sessions && sessions.length > 0) {
         setActiveSessionId((sessions[0] as any).id);
       }
-      // If no sessions, ChatInterface will create one
     };
     loadLatest();
   }, [user, id]);
 
-  const handleNewSession = () => {
-    setActiveSessionId(null);
-  };
+  const handleNewSession = () => setActiveSessionId(null);
 
   const handleClearChat = async (sessionId: string) => {
     await supabase.from("messages").delete().eq("session_id", sessionId);
-    // Force re-render by toggling session
     setActiveSessionId(null);
     setTimeout(() => setActiveSessionId(sessionId), 0);
   };
@@ -83,15 +80,22 @@ export default function AgentChatPage() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center gap-4 border-b border-border px-5 py-3">
-        <button onClick={() => navigate("/")} className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors">
+      <header className="flex items-center gap-3 border-b border-border px-4 py-2.5 bg-card/60 backdrop-blur-sm">
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => navigate("/")}>
           <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        </Button>
+
+        {sidebarCollapsed && (
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setSidebarCollapsed(false)}>
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+        )}
+
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
           <IconComponent className="h-5 w-5" />
         </div>
-        <div className="flex-1">
-          <h2 className="text-lg font-semibold text-foreground">{agent.name}</h2>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground truncate">{agent.name}</h2>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider">{agent.category}</Badge>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -100,8 +104,9 @@ export default function AgentChatPage() {
             </span>
           </div>
         </div>
-      </div>
+      </header>
 
+      {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {user && (
           <ChatSessionSidebar
@@ -112,6 +117,8 @@ export default function AgentChatPage() {
             onSelectSession={setActiveSessionId}
             onNewSession={handleNewSession}
             onClearChat={handleClearChat}
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed((v) => !v)}
           />
         )}
         <div className="flex-1 overflow-hidden">
