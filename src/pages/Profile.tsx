@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { Camera, Save, Loader2, Shield } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import * as api from "@/lib/api";
 
 export default function ProfilePage() {
   const { user, profile, roles, refreshProfile } = useAuth();
@@ -29,14 +29,11 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setUploading(true);
-    const ext = file.name.split(".").pop();
-    const path = `${user.id}/avatar.${ext}`;
-    const { error } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
-    if (error) {
+    try {
+      const data = await api.uploadAvatar(file);
+      setAvatarUrl(data.url);
+    } catch {
       toast({ title: t("profile.uploadError"), variant: "destructive" });
-    } else {
-      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-      setAvatarUrl(data.publicUrl);
     }
     setUploading(false);
   };
@@ -44,15 +41,12 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ display_name: displayName, bio, avatar_url: avatarUrl })
-      .eq("user_id", user.id);
-    if (error) {
-      toast({ title: t("profile.saveError"), variant: "destructive" });
-    } else {
+    try {
+      await api.updateProfile({ display_name: displayName, bio, avatar_url: avatarUrl });
       toast({ title: t("profile.saved") });
       await refreshProfile();
+    } catch {
+      toast({ title: t("profile.saveError"), variant: "destructive" });
     }
     setSaving(false);
   };

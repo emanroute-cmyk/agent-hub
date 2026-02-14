@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, MessageSquare, Pencil, Check, X, PanelLeftClose } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import * as api from "@/lib/api";
 
 interface Session {
   id: string;
@@ -51,19 +51,10 @@ export function ChatSessionSidebar({
 
   const loadSessions = async () => {
     try {
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .select("id, title, created_at, updated_at")
-        .eq("user_id", userId)
-        .eq("agent_id", agentId)
-        .order("updated_at", { ascending: false });
-      
-      if (error) {
-        console.error("Error loading sessions:", error);
-        return;
-      }
-      
+      const data = await api.fetchSessions(agentId);
       setSessions((data as Session[]) || []);
+    } catch (error) {
+      console.error("Error loading sessions:", error);
     } finally {
       setIsLoading(false);
     }
@@ -76,34 +67,21 @@ export function ChatSessionSidebar({
     try {
       console.log("🧹 Cleaning up all empty chats on page load...");
       
-      // Get all sessions for this agent
-      const { data: sessions } = await supabase
-        .from("chat_sessions")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("agent_id", agentId);
-
-      if (!sessions || sessions.length === 0) return;
+      const allSessions = await api.fetchSessions(agentId);
+      if (!allSessions || allSessions.length === 0) return;
 
       let deletedCount = 0;
 
-      // For each session, check if it has any messages
-      for (const session of sessions) {
-        const { count, error } = await supabase
-          .from("messages")
-          .select("*", { count: "exact", head: true })
-          .eq("session_id", session.id);
-
-        if (error) {
-          console.error("Error checking messages:", error);
-          continue;
-        }
-
-        // If no messages, delete it
-        if (count === 0) {
-          console.log("🗑️ Deleting empty chat on load:", session.id);
-          await supabase.from("chat_sessions").delete().eq("id", session.id);
-          deletedCount++;
+      for (const session of allSessions) {
+        try {
+          const count = await api.countSessionMessages(session.id);
+          if (count === 0) {
+            console.log("🗑️ Deleting empty chat on load:", session.id);
+            await api.deleteSession(session.id);
+            deletedCount++;
+          }
+        } catch (err) {
+          console.error("Error checking messages:", err);
         }
       }
 
@@ -112,19 +90,12 @@ export function ChatSessionSidebar({
       }
 
       setInitialCleanupDone(true);
-      
-      // Reload sessions after cleanup
       await loadSessions();
-      
-      // If the active session was deleted, create a new one
-      if (activeSessionId) {
-        const { data: checkSession } = await supabase
-          .from("chat_sessions")
-          .select("id")
-          .eq("id", activeSessionId)
-          .single();
 
-        if (!checkSession) {
+      if (activeSessionId) {
+        const refreshed = await api.fetchSessions(agentId);
+        const exists = refreshed.some((s: any) => s.id === activeSessionId);
+        if (!exists) {
           console.log("🆕 Active session was deleted, creating new one");
           onNewSession();
         }
@@ -135,18 +106,16 @@ export function ChatSessionSidebar({
     }
   };
 
-  // Run cleanup only once when component mounts (page load/refresh)
   useEffect(() => {
     if (userId && agentId) {
       deleteAllEmptyChats();
     }
-  }, [userId, agentId]); // Only depends on userId and agentId
+  }, [userId, agentId]);
 
   useEffect(() => {
     loadSessions();
   }, [userId, agentId, activeSessionId]);
 
-  // Watch for sessionTitles changes
   useEffect(() => {
     if (Object.keys(sessionTitles).length > 0) {
       setSessions(prevSessions => 
@@ -155,11 +124,7 @@ export function ChatSessionSidebar({
           if (newTitle && newTitle !== session.title) {
             setUpdatingId(session.id);
             setTimeout(() => setUpdatingId(null), 1000);
-            
-            return {
-              ...session,
-              title: newTitle
-            };
+            return { ...session, title: newTitle };
           }
           return session;
         })
@@ -177,22 +142,18 @@ export function ChatSessionSidebar({
   const handleDelete = async (sid: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    
-    // Animate out
     setDeletingId(sid);
     
-    // Wait for animation then delete
     setTimeout(async () => {
       try {
-        await supabase.from("messages").delete().eq("session_id", sid);
-        await supabase.from("chat_sessions").delete().eq("id", sid);
+        await api.deleteSessionMessages(sid);
+        await api.deleteSession(sid);
         
         if (sid === activeSessionId) {
           onNewSession();
         } else {
           loadSessions();
         }
-        
         setDeletingId(null);
       } catch (error) {
         console.error("Error deleting session:", error);
@@ -218,17 +179,13 @@ export function ChatSessionSidebar({
     }
     
     try {
-      await supabase
-        .from("chat_sessions")
-        .update({ title: editValue.trim() })
-        .eq("id", editingId);
+      await api.updateSession(editingId, { title: editValue.trim() });
       
       setUpdatingId(editingId);
       setSessions(prev => 
         prev.map(s => s.id === editingId ? { ...s, title: editValue.trim() } : s)
       );
       setTimeout(() => setUpdatingId(null), 1000);
-      
       setEditingId(null);
     } catch (error) {
       console.error("Error renaming session:", error);
@@ -245,11 +202,9 @@ export function ChatSessionSidebar({
     if (sessionTitles[session.id]) {
       return sessionTitles[session.id];
     }
-    
     if (session.title && session.title !== agentName) {
       return session.title;
     }
-    
     return new Date(session.created_at).toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
@@ -267,22 +222,10 @@ export function ChatSessionSidebar({
         className="relative h-full shrink-0 overflow-hidden border-r border-border bg-card/50"
       >
         <div className="flex h-full w-10 flex-col items-center pt-3">
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            className="h-7 w-7 mb-2" 
-            onClick={onNewSession} 
-            title={t("chat.newChat")}
-          >
+          <Button size="icon" variant="ghost" className="h-7 w-7 mb-2" onClick={onNewSession} title={t("chat.newChat")}>
             <Plus className="h-4 w-4" />
           </Button>
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            className="h-7 w-7" 
-            onClick={onToggle}
-            title={t("chat.expand")}
-          >
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onToggle} title={t("chat.expand")}>
             <PanelLeftClose className="h-4 w-4 rotate-180" />
           </Button>
         </div>
@@ -298,34 +241,20 @@ export function ChatSessionSidebar({
       className="relative h-full shrink-0 overflow-hidden border-r border-border bg-card/50"
     >
       <div className="flex h-full w-64 flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between px-3 py-3 border-b border-border">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             {t("chat.history")}
           </span>
           <div className="flex items-center gap-1">
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              className="h-7 w-7" 
-              onClick={onNewSession} 
-              title={t("chat.newChat")}
-            >
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onNewSession} title={t("chat.newChat")}>
               <Plus className="h-4 w-4" />
             </Button>
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              className="h-7 w-7" 
-              onClick={onToggle}
-              title={t("chat.collapse")}
-            >
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onToggle} title={t("chat.collapse")}>
               <PanelLeftClose className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        {/* Sessions list */}
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             <AnimatePresence mode="popLayout">
@@ -375,22 +304,10 @@ export function ChatSessionSidebar({
                         className="flex-1 min-w-0 bg-background border border-border rounded px-1.5 py-0.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary/40"
                         maxLength={100}
                       />
-                      <motion.button 
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={confirmRename} 
-                        className="text-primary hover:text-primary/80 transition-colors"
-                        title="Confirm"
-                      >
+                      <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={confirmRename} className="text-primary hover:text-primary/80 transition-colors" title="Confirm">
                         <Check className="h-3.5 w-3.5" />
                       </motion.button>
-                      <motion.button 
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={cancelRename} 
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                        title="Cancel"
-                      >
+                      <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={cancelRename} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
                         <X className="h-3.5 w-3.5" />
                       </motion.button>
                     </div>
@@ -400,33 +317,16 @@ export function ChatSessionSidebar({
                         className="flex-1 truncate" 
                         onDoubleClick={(e) => startRename(s, e)} 
                         title={s.title || "Double-click to rename"}
-                        animate={updatingId === s.id ? { 
-                          scale: [1, 1.02, 1],
-                          transition: { duration: 0.3 }
-                        } : {}}
+                        animate={updatingId === s.id ? { scale: [1, 1.02, 1], transition: { duration: 0.3 } } : {}}
                       >
                         {getDisplayTitle(s)}
                       </motion.span>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <motion.div
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Pencil 
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer" 
-                            onClick={(e) => startRename(s, e)} 
-                            name="Rename"
-                          />
+                        <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                          <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer" onClick={(e) => startRename(s, e)} />
                         </motion.div>
-                        <motion.div
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                        >
-                          <Trash2 
-                            className="h-3.5 w-3.5 shrink-0 text-destructive/70 hover:text-destructive cursor-pointer" 
-                            onClick={(e) => handleDelete(s.id, e)} 
-                            name="Delete"
-                          />
+                        <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-destructive/70 hover:text-destructive cursor-pointer" onClick={(e) => handleDelete(s.id, e)} />
                         </motion.div>
                       </div>
                     </>
@@ -436,24 +336,15 @@ export function ChatSessionSidebar({
             </AnimatePresence>
             
             {sessions.length === 0 && !isLoading && (
-              <motion.p 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center text-xs text-muted-foreground py-4"
-              >
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-xs text-muted-foreground py-4">
                 {t("chat.noHistory")}
               </motion.p>
             )}
           </div>
         </ScrollArea>
 
-        {/* Clear chat footer */}
         {activeSessionId && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="border-t border-border p-2"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t border-border p-2">
             <Button
               variant="ghost"
               size="sm"

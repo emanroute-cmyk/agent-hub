@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import * as api from "@/lib/api";
 
 interface AgentRow {
   id: string;
@@ -30,13 +30,17 @@ export default function AgentChatPage() {
   const [loading, setLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  // Add state for real-time session titles
   const [sessionTitles, setSessionTitles] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from("agents").select("*").eq("id", id).maybeSingle();
-      setAgent(data as AgentRow | null);
+      try {
+        const data = await api.fetchAgent(id!);
+        setAgent(data as AgentRow | null);
+      } catch (err) {
+        console.error(err);
+        setAgent(null);
+      }
       setLoading(false);
     };
     load();
@@ -45,15 +49,13 @@ export default function AgentChatPage() {
   useEffect(() => {
     if (!user || !id) return;
     const loadLatest = async () => {
-      const { data: sessions } = await supabase
-        .from("chat_sessions")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("agent_id", id)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-      if (sessions && sessions.length > 0) {
-        setActiveSessionId((sessions[0] as any).id);
+      try {
+        const sessions = await api.fetchSessions(id!);
+        if (sessions && sessions.length > 0) {
+          setActiveSessionId(sessions[0].id);
+        }
+      } catch (err) {
+        console.error(err);
       }
     };
     loadLatest();
@@ -61,17 +63,18 @@ export default function AgentChatPage() {
 
   const handleNewSession = () => {
     setActiveSessionId(null);
-    // Optionally clear the title for the new session
-    // No need to clear sessionTitles as it will be added when title is generated
   };
 
   const handleClearChat = async (sessionId: string) => {
-    await supabase.from("messages").delete().eq("session_id", sessionId);
+    try {
+      await api.deleteSessionMessages(sessionId);
+    } catch (err) {
+      console.error(err);
+    }
     setActiveSessionId(null);
     setTimeout(() => setActiveSessionId(sessionId), 0);
   };
 
-  // Handle real-time title updates from ChatInterface
   const handleSessionTitleUpdated = (sessionId: string, title: string) => {
     console.log("🎯 Title updated in real-time:", { sessionId, title });
     setSessionTitles(prev => ({
@@ -80,7 +83,6 @@ export default function AgentChatPage() {
     }));
   };
 
-  // Reset sessionTitles when agent changes
   useEffect(() => {
     setSessionTitles({});
   }, [id]);
@@ -118,10 +120,6 @@ export default function AgentChatPage() {
           <h2 className="text-sm font-semibold text-foreground truncate">{agent.name}</h2>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider">{agent.category}</Badge>
-            {/* <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary/80 animate-pulse-glow" />
-              {t("agents.online")}
-            </span> */}
           </div>
         </div>
       </header>
@@ -139,7 +137,7 @@ export default function AgentChatPage() {
             onClearChat={handleClearChat}
             collapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed((v) => !v)}
-            sessionTitles={sessionTitles} // Pass the real-time titles
+            sessionTitles={sessionTitles}
           />
         )}
         <div className="flex-1 overflow-hidden">
@@ -148,7 +146,7 @@ export default function AgentChatPage() {
             agentName={agent.name}
             sessionId={activeSessionId}
             onSessionCreated={setActiveSessionId}
-            onSessionTitleUpdated={(title) => handleSessionTitleUpdated(activeSessionId!, title)} // Pass the title update handler
+            onSessionTitleUpdated={(title) => handleSessionTitleUpdated(activeSessionId!, title)}
           />
         </div>
       </div>

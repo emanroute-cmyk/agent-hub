@@ -1,11 +1,11 @@
 import { useI18n, LANGUAGES } from "@/lib/i18n";
 import { useTheme, THEMES } from "@/lib/theme";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
 import { Globe, Palette, Bell, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
+import * as api from "@/lib/api";
 
 export default function SettingsPage() {
   const { t, language, setLanguage } = useI18n();
@@ -16,18 +16,22 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user) {
-      supabase.from("user_settings").select("*").eq("user_id", user.id).maybeSingle().then(({ data }) => {
+      api.fetchSettings().then((data) => {
         if (data) {
-          setNotifications((data as any).notifications_enabled ?? true);
+          setNotifications(data.notifications_enabled ?? true);
         }
-      });
+      }).catch(console.error);
     }
   }, [user]);
 
   const saveSettings = async (updates: Record<string, any>) => {
     if (!user) return;
-    await supabase.from("user_settings").update(updates).eq("user_id", user.id);
-    toast({ title: t("settings.saved") });
+    try {
+      await api.updateSettings(updates);
+      toast({ title: t("settings.saved") });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (

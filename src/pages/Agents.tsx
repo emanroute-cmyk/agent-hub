@@ -4,8 +4,8 @@ import { Search, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
 import { AGENT_ICONS } from "@/lib/agents";
+import * as api from "@/lib/api";
 
 interface AgentRow {
   id: string;
@@ -26,20 +26,13 @@ export default function AgentsPage() {
   useEffect(() => {
     const loadAgents = async () => {
       if (!user) return;
-
-      const { data, error } = await supabase
-        .from("agents")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error(error);
-        return;
+      try {
+        const data = await api.fetchAgents();
+        setAgents((data as AgentRow[]) || []);
+      } catch (err) {
+        console.error(err);
       }
-
-      setAgents((data as AgentRow[]) || []);
     };
-
     loadAgents();
   }, [user]);
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
+import * as api from "@/lib/api";
 
 export type AppRole = "admin" | "manager" | "user";
 
@@ -47,28 +48,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .maybeSingle();
-    setProfile(data as Profile | null);
-  }, []);
-
-  const fetchRoles = useCallback(async (userId: string) => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId);
-    setRoles((data || []).map((r: any) => r.role as AppRole));
+  const fetchProfileAndRoles = useCallback(async () => {
+    try {
+      const [profileData, rolesData] = await Promise.all([
+        api.fetchProfile(),
+        api.fetchRoles(),
+      ]);
+      setProfile(profileData as Profile | null);
+      setRoles((rolesData?.roles || []) as AppRole[]);
+    } catch (err) {
+      console.error("Error fetching profile/roles via API:", err);
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     if (user) {
-      await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
+      await fetchProfileAndRoles();
     }
-  }, [user, fetchProfile, fetchRoles]);
+  }, [user, fetchProfileAndRoles]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -76,12 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          // Use setTimeout to avoid Supabase client deadlock
           setTimeout(async () => {
-            await Promise.all([
-              fetchProfile(session.user.id),
-              fetchRoles(session.user.id),
-            ]);
+            await fetchProfileAndRoles();
             setLoading(false);
           }, 0);
         } else {
@@ -96,18 +89,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        Promise.all([
-          fetchProfile(session.user.id),
-          fetchRoles(session.user.id),
-        ]).then(() => setLoading(false));
+        fetchProfileAndRoles().then(() => setLoading(false));
       } else {
         setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchProfile, fetchRoles]);
+  }, [fetchProfileAndRoles]);
 
+  // Auth operations still go through Supabase Auth SDK (not DB)
   const signUp = async (email: string, password: string, displayName: string) => {
     const { error } = await supabase.auth.signUp({
       email,
