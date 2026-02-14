@@ -3,7 +3,7 @@ import { Send, Loader2, Bot, User, Image, Paperclip, Mic, MicOff, X, FileText, P
 import { motion, AnimatePresence } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
+import * as api from "@/lib/api";
 
 interface ChatMsg {
   id: string;
@@ -14,9 +14,6 @@ interface ChatMsg {
   file_name: string | null;
   created_at: string;
 }
-
-// Flask backend configuration
-const FLASK_API_URL = "http://127.0.0.1:5000";
 
 export function ChatInterface({
   agentId,
@@ -52,111 +49,47 @@ export function ChatInterface({
   }, [messages]);
 
   const checkBackendHealth = async () => {
-    try {
-      const response = await fetch(`${FLASK_API_URL}/health`, {
-        method: "GET",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Check if backend is in offline_mode
-        setIsBackendOnline(data.status !== "offline_mode");
-      } else {
-        setIsBackendOnline(false);
-      }
-    } catch (error) {
-      console.error("Health check error:", error);
-      setIsBackendOnline(false);
-    }
+    const result = await api.checkHealth();
+    setIsBackendOnline(result.online);
   };
 
   useEffect(() => {
     checkBackendHealth();
-
-    // Check every 30 seconds
-    const interval = setInterval(() => {
-      checkBackendHealth();
-    }, 30000);
-
+    const interval = setInterval(checkBackendHealth, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Reset title generated flag when session changes
   useEffect(() => {
     setHasGeneratedTitle(false);
   }, [sessionId]);
 
-  // Add this function to notify parent immediately when title is generated
   const generateSessionTitle = async (message: string) => {
     if (!sessionId || !user || hasGeneratedTitle) return;
 
     try {
-      // Try to use Flask to generate a summary
-      const response = await fetch(`${FLASK_API_URL}/summarize`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify({
-          text: message,
-          max_length: 50
-        }),
+      let title: string;
+      try {
+        const result = await api.summarizeText(message, 50);
+        title = result.summary || message.substring(0, 50);
+      } catch {
+        title = message.length > 50 ? message.substring(0, 47) + "..." : message;
+      }
+
+      await api.updateSession(sessionId, {
+        title,
+        updated_at: new Date().toISOString()
       });
 
-      let title: string;
-
-      if (response.ok) {
-        const result = await response.json();
-        title = result.summary || message.substring(0, 50);
-      } else {
-        title = message.length > 50
-          ? message.substring(0, 47) + "..."
-          : message;
-      }
-
-      // Update the session title in the database
-      const { error } = await supabase
-        .from("chat_sessions")
-        .update({
-          title: title,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", sessionId);
-
-      if (error) {
-        console.error("Error updating session title:", error);
-      } else {
-        console.log("Session title updated:", title);
-        setHasGeneratedTitle(true);
-
-        // IMMEDIATELY notify parent component
-        if (onSessionTitleUpdated) {
-          onSessionTitleUpdated(title);
-        }
-      }
-
+      setHasGeneratedTitle(true);
+      if (onSessionTitleUpdated) onSessionTitleUpdated(title);
     } catch (error) {
       console.error("Error generating title:", error);
-
-      const fallbackTitle = message.length > 50
-        ? message.substring(0, 47) + "..."
-        : message;
-
-      await supabase
-        .from("chat_sessions")
-        .update({
-          title: fallbackTitle,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", sessionId);
-
+      const fallbackTitle = message.length > 50 ? message.substring(0, 47) + "..." : message;
+      try {
+        await api.updateSession(sessionId, { title: fallbackTitle, updated_at: new Date().toISOString() });
+      } catch {}
       setHasGeneratedTitle(true);
-
-      // IMMEDIATELY notify parent component
-      if (onSessionTitleUpdated) {
-        onSessionTitleUpdated(fallbackTitle);
-      }
+      if (onSessionTitleUpdated) onSessionTitleUpdated(fallbackTitle);
     }
   };
 
@@ -166,56 +99,30 @@ export function ChatInterface({
 
     const loadSession = async () => {
       if (sessionId) {
-        // Load messages for existing session
-        console.log("Loading messages for existing session:", sessionId);
-        const { data: msgs, error } = await supabase
-          .from("messages")
-          .select("*")
-          .eq("session_id", sessionId)
-          .order("created_at", { ascending: true });
+        try {
+          const msgs = await api.fetchMessages(sessionId);
+          setMessages((msgs as ChatMsg[]) || []);
 
-        if (error) {
+          // Check if session already has a custom title
+          const sessions = await api.fetchSessions(agentId);
+          const current = sessions.find((s: any) => s.id === sessionId);
+          if (current && current.title !== agentName) {
+            setHasGeneratedTitle(true);
+          }
+        } catch (error) {
           console.error("Error loading messages:", error);
-          return;
-        }
-
-        setMessages((msgs as ChatMsg[]) || []);
-
-        // Check if session already has a custom title (not the default agent name)
-        const { data: session } = await supabase
-          .from("chat_sessions")
-          .select("title")
-          .eq("id", sessionId)
-          .single();
-
-        if (session && session.title !== agentName) {
-          setHasGeneratedTitle(true);
         }
       } else {
-        // Create a new session with default title (will be updated after first message)
-        console.log("Creating new session for agent:", agentName);
-        const { data, error } = await supabase
-          .from("chat_sessions")
-          .insert({
-            user_id: user.id,
-            agent_id: agentId,
-            title: agentName, // Temporary title
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select("id")
-          .single();
-
-        if (error) {
+        try {
+          const data = await api.createSession(agentId, agentName);
+          if (data?.id) {
+            console.log("New session created:", data.id);
+            onSessionCreated(data.id);
+          }
+        } catch (error) {
           console.error("Error creating session:", error);
           return;
         }
-
-        if (data) {
-          console.log("New session created:", data.id);
-          onSessionCreated(data.id);
-        }
-
         setMessages([]);
         setHasGeneratedTitle(false);
       }
@@ -224,14 +131,12 @@ export function ChatInterface({
     loadSession();
   }, [user, agentId, agentName, sessionId, onSessionCreated]);
 
-  const uploadMedia = async (file: File, type: "image" | "file" | "voice"): Promise<{ url: string; fileName: string } | null> => {
-    if (!user) return null;
-    const ext = file.name.split(".").pop();
-    const path = `${user.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("chat-media").upload(path, file);
-    if (error) return null;
-    const { data } = supabase.storage.from("chat-media").getPublicUrl(path);
-    return { url: data.publicUrl, fileName: file.name };
+  const uploadMediaFile = async (file: File): Promise<{ url: string; fileName: string } | null> => {
+    try {
+      return await api.uploadMedia(file);
+    } catch {
+      return null;
+    }
   };
 
   const sendMessage = async (
@@ -240,161 +145,80 @@ export function ChatInterface({
     mediaUrl?: string,
     fileName?: string
   ) => {
-    if (!sessionId || !user) {
-      console.log("❌ No session or user:", { sessionId, user });
-      return;
-    }
+    if (!sessionId || !user) return;
 
     const text = content || input.trim();
     if (!text && !mediaUrl) return;
 
-    // Check if this is the first user message (messages.length === 0)
     const isFirstMessage = messages.length === 0 && !hasGeneratedTitle;
 
-    // 1️⃣ Save USER message locally (DB)
-    const { data: userMsg, error: userError } = await supabase
-      .from("messages")
-      .insert({
+    // Save user message via API
+    try {
+      const userMsg = await api.createMessage({
         session_id: sessionId,
         role: "user",
         content: text || null,
         media_type: mediaType || "text",
         media_url: mediaUrl || null,
         file_name: fileName || null,
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
+      });
 
-    if (userError) {
-      console.error("Error saving user message:", userError);
+      if (userMsg) setMessages((prev) => [...prev, userMsg as ChatMsg]);
+    } catch (err) {
+      console.error("Error saving user message:", err);
       return;
     }
 
-    if (userMsg) setMessages((prev) => [...prev, userMsg as ChatMsg]);
     setInput("");
     setIsLoading(true);
 
     try {
       let result;
-      let response;
 
-      // ===============================
-      // 🟢 TEXT MESSAGE → Flask /echo360/ask endpoint
-      // ===============================
       if (!mediaUrl && text) {
-        console.log("📤 Sending text to Flask:", text);
-
-        response = await fetch(`${FLASK_API_URL}/echo360/ask`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-          },
-          body: JSON.stringify({
-            question: text,
-            context: `Agent: ${agentName}, Session: ${sessionId}`
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        result = await response.json();
-        console.log("📥 Flask response:", result);
-      }
-
-      // ===============================
-      // 🟢 IMAGE / FILE / VOICE → Flask /echo360/upload
-      // ===============================
-      else if (mediaUrl && fileName) {
-        console.log("📤 Uploading file to Flask:", fileName);
-
-        // Download file from Supabase
+        result = await api.askAgent(text, `Agent: ${agentName}, Session: ${sessionId}`);
+      } else if (mediaUrl && fileName) {
         const fileResponse = await fetch(mediaUrl);
         const blob = await fileResponse.blob();
-
-        const formData = new FormData();
-        formData.append("file", blob, fileName);
-
-        response = await fetch(`${FLASK_API_URL}/echo360/upload`, {
-          method: "POST",
-          body: formData,
-          // Don't set Content-Type header, let browser set it with boundary
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        result = await response.json();
-        console.log("📥 Upload response:", result);
+        result = await api.uploadToAgent(blob, fileName);
       }
 
-      // ===============================
-      // 🟢 GENERATE TITLE FOR FIRST MESSAGE
-      // ===============================
       if (isFirstMessage && text) {
         await generateSessionTitle(text);
       } else if (isFirstMessage && fileName) {
-        // If first message is a file, use filename as title
         await generateSessionTitle(`File: ${fileName}`);
       }
 
-      // 3️⃣ Save ASSISTANT message
-      const assistantContent = result?.answer ||
-        result?.message ||
-        result?.response ||
-        "I received your message but couldn't generate a response.";
+      const assistantContent = result?.answer || result?.message || result?.response || "I received your message but couldn't generate a response.";
 
-      const { data: assistantMsg, error: assistantError } = await supabase
-        .from("messages")
-        .insert({
+      try {
+        const assistantMsg = await api.createMessage({
           session_id: sessionId,
           role: "assistant",
           content: assistantContent,
           media_type: "text",
           media_url: null,
           file_name: null,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (assistantError) {
-        console.error("Error saving assistant message:", assistantError);
-      } else if (assistantMsg) {
-        setMessages((prev) => [...prev, assistantMsg as ChatMsg]);
+        });
+        if (assistantMsg) setMessages((prev) => [...prev, assistantMsg as ChatMsg]);
+      } catch (err) {
+        console.error("Error saving assistant message:", err);
       }
 
-      // Update session timestamp
-      await supabase
-        .from("chat_sessions")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", sessionId);
-
+      await api.updateSession(sessionId, { updated_at: new Date().toISOString() });
     } catch (error) {
       console.error("❌ Agent call failed:", error);
-
-      // Save error message to chat
-      const { data: errorMsg } = await supabase
-        .from("messages")
-        .insert({
+      try {
+        const errorMsg = await api.createMessage({
           session_id: sessionId,
           role: "assistant",
-          content: `Error: ${error instanceof Error ? error.message : "Unknown error"}. Please check if the Flask server is running at ${FLASK_API_URL}`,
+          content: `Error: ${error instanceof Error ? error.message : "Unknown error"}. Please check if the backend server is running.`,
           media_type: "text",
           media_url: null,
           file_name: null,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (errorMsg) {
-        setMessages((prev) => [...prev, errorMsg as ChatMsg]);
-      }
+        });
+        if (errorMsg) setMessages((prev) => [...prev, errorMsg as ChatMsg]);
+      } catch {}
     } finally {
       setIsLoading(false);
     }
@@ -403,22 +227,16 @@ export function ChatInterface({
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await uploadMedia(file, "image");
-    if (result) {
-      await sendMessage(null, "image", result.url, result.fileName);
-    }
-    // Reset input
+    const result = await uploadMediaFile(file);
+    if (result) await sendMessage(undefined, "image", result.url, result.fileName);
     e.target.value = '';
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await uploadMedia(file, "file");
-    if (result) {
-      await sendMessage(null, "file", result.url, result.fileName);
-    }
-    // Reset input
+    const result = await uploadMediaFile(file);
+    if (result) await sendMessage(undefined, "file", result.url, result.fileName);
     e.target.value = '';
   };
 
@@ -439,10 +257,8 @@ export function ChatInterface({
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: "audio/webm" });
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
-        const result = await uploadMedia(file, "voice");
-        if (result) {
-          await sendMessage(null, "voice", result.url, result.fileName);
-        }
+        const result = await uploadMediaFile(file);
+        if (result) await sendMessage(undefined, "voice", result.url, result.fileName);
       };
 
       recorder.start();
@@ -527,9 +343,7 @@ export function ChatInterface({
             <Bot className="h-12 w-12 mx-auto mb-3 text-primary/30" />
             <p className="text-sm">{t("chat.welcome", { name: agentName })}</p>
             <p className="text-xs mt-2">
-              {isBackendOnline
-                ? "Connected to backend"
-                : "Waiting for server..."}
+              {isBackendOnline ? "Connected to backend" : "Waiting for server..."}
             </p>
           </div>
         )}
@@ -590,50 +404,20 @@ export function ChatInterface({
       {/* Input */}
       <div className="border-t border-border p-4">
         <div className="flex gap-2 items-end">
-          {/* Media buttons */}
           <div className="flex gap-1">
-            <button
-              onClick={() => imageInputRef.current?.click()}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-              title={t("chat.uploadImage")}
-              disabled={isLoading}
-            >
+            <button onClick={() => imageInputRef.current?.click()} className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-muted-foreground hover:text-foreground transition-colors" title={t("chat.uploadImage")} disabled={isLoading}>
               <Image className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-              title={t("chat.uploadFile")}
-              disabled={isLoading}
-            >
+            <button onClick={() => fileInputRef.current?.click()} className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-muted-foreground hover:text-foreground transition-colors" title={t("chat.uploadFile")} disabled={isLoading}>
               <Paperclip className="h-4 w-4" />
             </button>
-            <button
-              onClick={toggleRecording}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${isRecording
-                  ? "bg-destructive text-destructive-foreground"
-                  : "bg-secondary text-muted-foreground hover:text-foreground"
-                }`}
-              title={t("chat.voiceRecord")}
-              disabled={isLoading}
-            >
+            <button onClick={toggleRecording} className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${isRecording ? "bg-destructive text-destructive-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"}`} title={t("chat.voiceRecord")} disabled={isLoading}>
               {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
           </div>
 
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageUpload}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
 
           <input
             type="text"

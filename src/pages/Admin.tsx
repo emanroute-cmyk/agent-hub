@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
+import * as api from "@/lib/api";
 
 const iconOptions = Object.keys(AGENT_ICONS);
 const statusOptions = ["online", "offline", "maintenance"] as const;
@@ -42,8 +42,12 @@ export default function AdminPage() {
   });
 
   const loadAgents = async () => {
-    const { data } = await supabase.from("agents").select("*").order("created_at", { ascending: false });
-    setAgents((data as AgentRow[]) || []);
+    try {
+      const data = await api.fetchAgents();
+      setAgents((data as AgentRow[]) || []);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   useEffect(() => { loadAgents(); }, []);
@@ -60,12 +64,16 @@ export default function AdminPage() {
       return;
     }
 
-    if (editingId) {
-      await supabase.from("agents").update({ ...form }).eq("id", editingId);
-      toast({ title: t("admin.agentUpdated") });
-    } else {
-      await supabase.from("agents").insert({ ...form, created_by: user?.id });
-      toast({ title: t("admin.agentCreated") });
+    try {
+      if (editingId) {
+        await api.updateAgent(editingId, form);
+        toast({ title: t("admin.agentUpdated") });
+      } else {
+        await api.createAgent({ ...form, created_by: user?.id });
+        toast({ title: t("admin.agentCreated") });
+      }
+    } catch (err) {
+      console.error(err);
     }
     resetForm();
     loadAgents();
@@ -85,16 +93,17 @@ export default function AdminPage() {
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("agents").delete().eq("id", id);
-    toast({ title: t("admin.agentDeleted") });
-    loadAgents();
+    try {
+      await api.deleteAgent(id);
+      toast({ title: t("admin.agentDeleted") });
+      loadAgents();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAssign = async () => {
     if (!assigningId || !assignEmail.trim()) return;
-    // Look up user by email from profiles
-    // We need to find the user_id - since we can't query auth.users, we search by email in a different way
-    // For now, use a simple approach with the profiles table
     toast({ title: t("admin.assignmentNote"), description: t("admin.assignmentNoteDesc") });
     setAssigningId(null);
     setAssignEmail("");
