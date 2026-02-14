@@ -154,6 +154,55 @@
     --shadow-glow: 0 0 20px hsl(330 100% 60% / 0.2);
     --shadow-glow-strong: 0 0 40px hsl(330 100% 60% / 0.35);
   }
+
+  /* Neon theme — electric red & blue */
+  [data-theme="neon"] {
+    --background: 230 35% 7%;
+    --foreground: 210 50% 95%;
+
+    --card: 230 30% 11%;
+    --card-foreground: 210 50% 95%;
+
+    --popover: 230 30% 11%;
+    --popover-foreground: 210 50% 95%;
+
+    --primary: 0 90% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 230 25% 16%;
+    --secondary-foreground: 210 40% 85%;
+
+    --muted: 230 25% 16%;
+    --muted-foreground: 225 15% 50%;
+
+    --accent: 215 100% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 25% 20%;
+    --input: 230 25% 20%;
+    --ring: 0 90% 55%;
+
+    --sidebar-background: 230 35% 6%;
+    --sidebar-foreground: 210 40% 85%;
+    --sidebar-primary: 0 90% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 25% 14%;
+    --sidebar-accent-foreground: 210 50% 95%;
+    --sidebar-border: 230 25% 17%;
+    --sidebar-ring: 0 90% 55%;
+
+    --glow: 0 90% 55%;
+    --glow-secondary: 215 100% 55%;
+    --surface: 230 28% 13%;
+    --surface-hover: 230 24% 18%;
+    --gradient-primary: linear-gradient(135deg, hsl(0 90% 55%), hsl(215 100% 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(0 90% 55%), hsl(260 80% 60%));
+    --shadow-glow: 0 0 20px hsl(0 90% 55% / 0.2);
+    --shadow-glow-strong: 0 0 40px hsl(0 90% 55% / 0.35);
+  }
 }
 
 @layer base {

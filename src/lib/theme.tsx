@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 
-export type Theme = "dark" | "light" | "cyberpunk";
+export type Theme = "dark" | "light" | "cyberpunk" | "neon";
 
 export const THEMES: { id: Theme; label: string; icon: string }[] = [
   { id: "dark", label: "Dark", icon: "🌙" },
   { id: "light", label: "Light", icon: "☀️" },
   { id: "cyberpunk", label: "Cyberpunk", icon: "⚡" },
+  { id: "neon", label: "Neon", icon: "🔴" },
 ];
 
 interface ThemeContextType {
